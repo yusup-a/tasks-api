@@ -1,30 +1,24 @@
-# syntax=docker/dockerfile:1
-
-# -------- Build stage --------
-FROM eclipse-temurin:17-jdk-alpine AS build
+# Use Maven image to build the app
+FROM maven:3.9.6-eclipse-temurin-17 AS build
 WORKDIR /app
 
-# Copy Maven wrapper & POM first (caches dependencies)
-COPY .mvn/ .mvn
-COPY mvnw pom.xml ./
-RUN chmod +x mvnw && ./mvnw -q -B -DskipTests dependency:go-offline
+# Copy pom.xml and download dependencies first (for caching)
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
 
-# Now copy source and build
+# Copy source code and package the app
 COPY src ./src
-RUN ./mvnw -q -B -DskipTests package
+RUN mvn clean package -DskipTests
 
-# -------- Runtime stage --------
-FROM eclipse-temurin:17-jre-alpine
+# Use smaller runtime image
+FROM eclipse-temurin:17-jdk-alpine
 WORKDIR /app
 
-# Render maps traffic to your container's exposed port.
-# We'll default to 8080 but also honor $PORT if Render sets it.
-ENV JAVA_OPTS=""
-ENV PORT=8080
-EXPOSE 8080
-
-# Copy jar built in the first stage
+# Copy built JAR file from previous stage
 COPY --from=build /app/target/*.jar app.jar
 
-# Start the app
-ENTRYPOINT ["sh","-c","java $JAVA_OPTS -jar app.jar"]
+# Expose port (Spring Boot defaults to 8080)
+EXPOSE 8080
+
+# Run the JAR
+ENTRYPOINT ["java", "-jar", "app.jar"]
